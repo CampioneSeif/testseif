@@ -23,9 +23,7 @@ jobs:
         run: npm install -g pnpm
 
       - name: Install dependencies
-        run: |
-          pnpm install
-          cd packages/mobile && pnpm install
+        run: pnpm install
 
       - name: Set up JDK
         uses: actions/setup-java@v3

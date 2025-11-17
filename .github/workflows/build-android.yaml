@@ -1,0 +1,63 @@
+name: build-android
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build_and_deploy:
+    runs-on: ubuntu-latest
+    env:
+      EXPO_PUBLIC_API_URL: http://52.47.141.99:3000
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24.11.0"
+
+      - name: Install pnpm globally
+        run: npm install -g pnpm
+
+      - name: Install dependencies
+        run: |
+          pnpm install
+          cd packages/mobile && pnpm install
+
+      - name: Set up JDK
+        uses: actions/setup-java@v3
+        with:
+          java-version: "17"
+          distribution: "temurin"
+
+      - name: Install Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Eject Android
+        working-directory: packages/mobile
+        run: |
+          npx expo prebuild --platform android --no-install
+          # Fix for expo-modules-core
+          sed -i "s/implementation project(':expo-modules-core')/implementation 'org.unimodules:expo-modules-core:1.0.0'/g" android/app/build.gradle
+
+      - name: Allow HTTP traffic in AndroidManifest.xml
+        working-directory: packages/mobile
+        run: |
+          sed -i 's|<application |<application android:usesCleartextTraffic="true" |' android/app/src/main/AndroidManifest.xml
+
+      - name: Build Release APK
+        working-directory: packages/mobile
+        run: |
+          cd android
+          ./gradlew assembleRelease --no-daemon --stacktrace
+
+      - name: Save APK artifact
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-apk
+          path: packages/mobile/android/app/build/outputs/apk/release/app-release.apk
+          retention-days: 1

@@ -1,0 +1,105 @@
+include:
+  - local: .gitlab/ci/node-default.yml
+
+stages: [test, sonar, build]
+
+
+
+variables:
+  APP_DIR: "packages/mobile-shop"
+  GIT_DEPTH: "0"
+
+test:
+  stage: test
+  rules:
+    - if: '$RUN_TESTS == "true"'
+    - when: never
+  script:
+    - cd $APP_DIR
+    - pnpm dlx --package=jest@^30 jest --ci --coverage --coverageReporters=lcov --coverageReporters=text-summary
+  artifacts:
+    when: always
+    paths:
+      - "$APP_DIR/coverage/lcov.info"
+    expire_in: 1 week
+
+sonarqube:
+  stage: sonar
+  image: sonarsource/sonar-scanner-cli:latest
+  before_script: []
+  needs: [test]
+  rules:
+    - if: '$RUN_SONAR == "true"'
+    - when: never
+  variables:
+    SONAR_HOST_URL: "https://sonarcloud.io"
+    SONAR_TOKEN: "8dec5093b5e39ef6f12143e1ab538b9afebd4b48"   
+    SONAR_SCANNER_SKIP_JRE_PROVISIONING: "true"
+    SONAR_SCANNER_OPTS: "-Xmx1024m"
+  script:
+    - cd $APP_DIR
+    - sonar-scanner -Dsonar.scanner.skip=true || true
+    - >
+      sonar-scanner
+      -Dsonar.projectKey="promoapp-shop"
+      -Dsonar.projectName="promoapp shop"
+      -Dsonar.organization=msc-said
+      -Dsonar.sources=.
+      -Dsonar.inclusions="src/**/*,app/**/*,packages/**/*.{js,jsx,ts,tsx}"
+      -Dsonar.exclusions="**/node_modules/**,**/.pnpm-store/**,**/coverage/**,**/dist/**,**/build/**,**/android/**,**/ios/**"
+      -Dsonar.test.inclusions="**/*.test.ts,**/*.test.tsx,**/*.spec.ts,**/*.spec.tsx"
+      -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info
+      -Dsonar.sourceEncoding=UTF-8
+
+
+.build-android-base: &build_android_base
+  stage: build
+  image: reactnativecommunity/react-native-android:latest   # ou v19.0/v20.0 si tu veux épingler
+  variables:
+    CI: "true"
+    NODE_ENV: "production"
+    EXPO_NO_TELEMETRY: "1"
+    PNPM_ALLOW_ANY_SCRIPTS: "true"
+    REQUIRED_NODE: "24.11.0"
+  before_script:
+    - apt-get update && apt-get install -y curl ca-certificates git bash
+    # --- Node 24 via nvm (l'image contient Node 22 par défaut) ---
+    - export NVM_DIR="$HOME/.nvm"
+    - curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
+    - . "$NVM_DIR/nvm.sh"
+    - nvm install ${REQUIRED_NODE}
+    - nvm use ${REQUIRED_NODE}
+    - node -v
+    # --- pnpm via Corepack ---
+    - corepack enable
+    # tu peux figer pnpm si besoin: corepack prepare pnpm@10.20.0 --activate
+    - cd $APP_DIR
+    - export HUSKY=0
+    - pnpm config set store-dir .pnpm-store
+    - pnpm install --no-frozen-lockfile
+
+  script:
+    - pnpm dlx expo prebuild --platform android --clean --no-install
+    - cd android && ./gradlew clean && ./gradlew :app:assembleRelease
+    - mkdir -p ../dist-android/apk
+    - find app/build/outputs -type f -path "*/apk/release/*.apk" -exec cp {} ../dist-android/apk/ \;
+    - cd .. && test -n "$(ls -A dist-android/apk 2>/dev/null)" || (echo "No APK produced" && exit 1)
+
+build:with_artifact_android:
+  <<: *build_android_base
+  needs: [sonarqube]
+  rules:
+    - if: '$RUN_BUILD == "true" && $SAVE_ARTIFACTS == "true"'
+    - when: never
+  artifacts:
+    name: "android-apk-$CI_COMMIT_REF_SLUG-$CI_COMMIT_SHORT_SHA"
+    when: always
+    expire_in: 7 days
+    paths:
+      - "$APP_DIR/dist-android/apk"
+
+build:no_artifact_android:
+  <<: *build_android_base
+  rules:
+    - if: '$RUN_BUILD == "true" && $SAVE_ARTIFACTS == "false"'
+    - when: never

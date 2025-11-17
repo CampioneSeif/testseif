@@ -41,12 +41,10 @@ jobs:
           sed -i "s/implementation project(':expo-modules-core')/implementation 'org.unimodules:expo-modules-core:1.0.0'/g" android/app/build.gradle
 
       - name: Allow HTTP traffic in AndroidManifest.xml
-        working-directory: packages/mobile
         run: |
           sed -i 's|<application |<application android:usesCleartextTraffic="true" |' android/app/src/main/AndroidManifest.xml
 
       - name: Build Release APK
-        working-directory: packages/mobile
         run: |
           cd android
           ./gradlew assembleRelease --no-daemon --stacktrace

@@ -54,5 +54,10 @@
     "react-test-renderer": "19.1.0",
     "typescript": "~5.9.2"
   },
+    "pnpm": {
+    "overrides": {
+      "uilib-native": "4.5.2"
+    }
+  },
   "private": true
 }
